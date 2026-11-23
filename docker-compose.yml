@@ -1,0 +1,56 @@
+services:
+  auth-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - auth-data:/var/lib/postgresql/data
+
+  order-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - order-data:/var/lib/postgresql/data
+
+  auth-service:
+    build: ./auth-service
+    environment:
+      DB_HOST: auth-db
+      DB_NAME: auth
+      DB_USER: app
+      DB_PASSWORD: secret
+      JWT_SECRET: change-me
+    ports:
+      - "8001:8000"
+    depends_on:
+      - auth-db
+
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "8003:8000"
+
+  order-service:
+    build: ./order-service
+    environment:
+      DB_HOST: order-db
+      DB_NAME: orders
+      DB_USER: app
+      DB_PASSWORD: secret
+      AUTH_URL: http://auth-service:8000
+      PAYMENT_URL: http://payment-service:8000
+    ports:
+      - "8002:8000"
+    depends_on:
+      - order-db
+      - auth-service
+      - payment-service
+
+volumes:
+  auth-data:
+  order-data:

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --line:#dfe3ea;
+          --ok:#1a9e55; --bad:#d63b3b; --accent:#2f6fed; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171d; --card:#1d2128; --text:#e8ebf0; --muted:#9aa3b2; --line:#2e343e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text);
+         font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; display:grid; gap:14px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  input { flex:1; min-width:120px; padding:9px 10px; border:1px solid var(--line);
+          border-radius:8px; background:var(--bg); color:var(--text); font-size:14px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--accent);
+           color:#fff; font-size:14px; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--line); }
+  .status { display:flex; gap:14px; flex-wrap:wrap; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%;
+         background:var(--muted); margin-inline-end:6px; }
+  .dot.up { background:var(--ok); } .dot.down { background:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:start; padding:6px 4px; border-bottom:1px solid var(--line); }
+  .muted { color:var(--muted); font-size:13px; }
+  pre { margin:0; padding:10px; background:var(--bg); border-radius:8px; font-size:12px;
+        overflow-x:auto; direction:ltr; text-align:left; min-height:40px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>المتجر (Microservices)</h1>
+    <div class="muted" id="who">مش مسجّل دخول</div>
+  </div>
+
+  <section class="card">
+    <h2>حالة الـ services</h2>
+    <div class="status">
+      <span><span class="dot" id="dot-auth"></span>auth</span>
+      <span><span class="dot" id="dot-order"></span>order</span>
+      <span><span class="dot" id="dot-payment"></span>payment</span>
+    </div>
+    <div class="muted" style="margin-top:8px">بتتحدّث كل 5 ثواني. الأخضر = شغّال، الأحمر = واقف.</div>
+  </section>
+
+  <section class="card">
+    <h2>1) حساب (auth-service)</h2>
+    <div class="row">
+      <input id="u" placeholder="username" autocomplete="username">
+      <input id="p" type="password" placeholder="password" autocomplete="current-password">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btn-register" class="secondary">تسجيل حساب</button>
+      <button id="btn-login">دخول</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2) شراء (order-service ثم payment-service)</h2>
+    <div class="row">
+      <input id="item" placeholder="اسم المنتج">
+      <input id="amount" type="number" placeholder="السعر">
+      <button id="btn-order">اشتري</button>
+    </div>
+    <div class="muted" style="margin-top:8px">أي مبلغ فوق 5000 هيتم رفضه من payment-service.</div>
+  </section>
+
+  <section class="card">
+    <h2>طلباتي</h2>
+    <table>
+      <thead><tr><th>الكود</th><th>المنتج</th><th>المبلغ</th><th>الحالة</th></tr></thead>
+      <tbody id="orders"></tbody>
+    </table>
+    <div class="row" style="margin-top:8px">
+      <button id="btn-refresh" class="secondary">تحديث</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>آخر رد من السيرفر</h2>
+    <pre id="log">-</pre>
+  </section>
+</main>
+
+<script>
+  var token = null;
+  function $(id) { return document.getElementById(id); }
+
+  async function api(path, method, body) {
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = "Bearer " + token;
+    var res = await fetch(path, {
+      method: method || "GET",
+      headers: headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    var data = null;
+    try { data = await res.json(); } catch (e) {}
+    $("log").textContent = method + " " + path + "\n" + res.status + "\n" +
+      JSON.stringify(data, null, 2);
+    return { ok: res.ok, status: res.status, data: data };
+  }
+
+  async function checkHealth() {
+    var names = ["auth", "order", "payment"];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      var dot = $("dot-" + n);
+      try {
+        var r = await fetch("/api/" + n + "/health");
+        var d = await r.json();
+        dot.className = "dot " + (r.ok && d.status === "UP" ? "up" : "down");
+      } catch (e) {
+        dot.className = "dot down";
+      }
+    }
+  }
+
+  function creds() {
+    return { username: $("u").value.trim(), password: $("p").value };
+  }
+
+  $("btn-register").onclick = async function () {
+    var r = await api("/api/auth/register", "POST", creds());
+    if (r.ok) alert("تم التسجيل، دوس دخول");
+  };
+
+  $("btn-login").onclick = async function () {
+    var r = await api("/api/auth/login", "POST", creds());
+    if (r.ok) {
+      token = r.data.token;
+      $("who").textContent = "مسجّل دخول باسم: " + $("u").value.trim();
+      loadOrders();
+    }
+  };
+
+  $("btn-order").onclick = async function () {
+    if (!token) { alert("سجّل دخول الأول"); return; }
+    await api("/api/order/orders", "POST",
+      { item: $("item").value.trim(), amount: parseFloat($("amount").value) });
+    loadOrders();
+  };
+
+  async function loadOrders() {
+    if (!token) return;
+    var r = await api("/api/order/orders");
+    var body = $("orders");
+    body.textContent = "";
+    if (!r.ok) return;
+    r.data.forEach(function (o) {
+      var tr = document.createElement("tr");
+      [o.order, o.item, o.amount, o.status].forEach(function (v) {
+        var td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  $("btn-refresh").onclick = loadOrders;
+  checkHealth();
+  setInterval(checkHealth, 5000);
+</script>
+</body>
+</html>
